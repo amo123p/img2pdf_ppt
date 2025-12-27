@@ -10,9 +10,6 @@
 
 依赖安装：
     pip install pillow pymupdf python-pptx
-
-作者：MiniMax Agent
-创建时间：2025-12-27
 """
 
 import os
@@ -611,3 +608,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
