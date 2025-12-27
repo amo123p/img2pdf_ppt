@@ -10,6 +10,8 @@
 
 依赖安装：
     pip install pillow pymupdf python-pptx
+
+创建时间：2025-12-27
 """
 
 import os
@@ -462,52 +464,80 @@ class ImageConverterGUI:
             self.root.after(0, lambda: self.convert_btn.config(state=tk.NORMAL))
     
     def convert_to_pdf(self, output_file):
-        """转换为PDF（使用PyMuPDF无损嵌入）"""
-        self.log("开始转换为PDF（无损模式）...")
-        
+        """转换为PDF"""
+        quality_mode = self.pdf_quality_var.get()
+        self.log(f"开始转换为PDF（{quality_mode}）...")
+
+        # 根据压缩模式设置参数
+        if quality_mode == "无损（推荐）":
+            compression_type = "lossless"
+            quality = None
+        elif quality_mode == "中等质量":
+            compression_type = "compress"
+            quality = 60
+        else:  # 高压缩（小文件）
+            compression_type = "compress"
+            quality = 30
+
         # 创建PDF文档
         pdf_document = fitz.open()
-        
+
         total_files = len(self.image_files)
         total_size = 0
-        
+
         for i, filepath in enumerate(self.image_files):
             filename = os.path.basename(filepath)
             file_size = os.path.getsize(filepath)
             total_size += file_size
-            
-            self.log(f"处理 ({i+1}/{total_files}): {filename}")
+
+            self.log(f"处理 ({i+1}/{total_files}): {filename} [{quality_mode}]")
             self.status_label.config(text=f"正在处理: {filename}", foreground="blue")
-            
-            # 获取图片尺寸
+
             try:
                 with Image.open(filepath) as img:
                     width, height = img.size
+
+                    if compression_type == "lossless":
+                        # 无损模式：直接嵌入原始图片
+                        page = pdf_document.new_page(width=width, height=height)
+                        page.insert_image(page.rect, filename=filepath, overlay=False)
+                    else:
+                        # 压缩模式：先压缩再嵌入
+                        # 转换为RGB模式（PDF不支持RGBA）
+                        if img.mode == 'RGBA':
+                            img = img.convert('RGB')
+                        elif img.mode == 'CMYK':
+                            img = img.convert('RGB')
+
+                        # 保存为压缩的JPEG数据
+                        img_buffer = io.BytesIO()
+                        img.save(img_buffer, format='JPEG', quality=quality, optimize=True)
+                        img_data = img_buffer.getvalue()
+
+                        # 创建PDF页面并插入压缩后的图片
+                        page = pdf_document.new_page(width=width, height=height)
+                        page.insert_image(page.rect, stream=img_data, overlay=False)
+
             except Exception as e:
-                self.log(f"  警告：无法读取图片尺寸: {e}")
+                self.log(f"  警告：无法处理图片: {e}")
                 continue
-            
-            # 创建PDF页面
-            page_width = width
-            page_height = height
-            page = pdf_document.new_page(width=page_width, height=page_height)
-            
-            # 插入图片（无损嵌入）
-            page.insert_image(page.rect, filename=filepath, overlay=False)
-            
+
             # 更新进度
             progress = ((i + 1) / total_files) * 100
             self.root.after(0, lambda p=progress: self.progress_var.set(p))
-        
+
         # 保存PDF
         self.log("正在保存PDF文件...")
         pdf_document.save(output_file)
         pdf_document.close()
-        
+
         output_size = os.path.getsize(output_file)
+        compression_ratio = (1 - output_size / total_size) * 100 if total_size > 0 else 0
+
         self.log(f"PDF生成完成！")
         self.log(f"  原始总大小: {total_size / (1024*1024):.2f} MB")
         self.log(f"  PDF大小: {output_size / (1024*1024):.2f} MB")
+        self.log(f"  压缩比: {compression_ratio:.1f}%")
     
     def convert_to_ppt(self, output_file):
         """转换为PPT"""
@@ -608,4 +638,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
